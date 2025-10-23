@@ -1,31 +1,126 @@
+import argparse
+import logging
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+from select import select
+import timeout_decorator
 import numpy as np
-
+import csv
+import glob
 from waggle.plugin import Plugin
-from waggle.data.vision import Camera
 
 
-def compute_mean_color(image):
-    return np.mean(image, (0, 1)).astype(float)
+# camera image fetch timeout (seconds)
+DEFAULT_CAMERA_TIMEOUT = 120
 
+def delete_all_files(folder_path):
+    if not os.path.isdir(folder_path):
+        return
+
+    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+    if not files:
+        return
+
+    for f in files:
+        file_path = os.path.join(folder_path, f)
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+@timeout_decorator.timeout(DEFAULT_CAMERA_TIMEOUT, use_signals=False)
+def get_camera_frames(ip, user, password, workdir="/data", frames=1):
+    cmd = [
+        "/thermal-raw",
+        "--url",
+        ip,
+        "--user",
+        user,
+        "--password",
+        password,
+        "--dir",
+        workdir,
+    ]
+    logging.info(f"Calling camera interface: {cmd}")
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE) as process:
+        while True:
+            pollresults = select([process.stdout], [], [], 5)[0]
+            if not pollresults:
+                logging.warning("Timeout waiting for camera interface output")
+                continue
+            output = pollresults[0].readline()
+            if not output:
+                logging.warning("No data from camera interface output")
+                continue
+            m = re.search(r"frame\s#(\d+)", output.strip().decode())
+            logging.info(output.strip().decode())
+            if m and int(m.groups()[0]) > frames:
+                logging.info("Max frame count reached, closing camera capture")
+                return
+
+def load_thermal_csv(filepath):
+    """Load thermal CSV file, skipping metadata lines."""
+    data_lines = []
+    with open(filepath, 'r') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            # Skip metadata (non-numeric first element)
+            if not row or not row[0].replace('.', '', 1).isdigit():
+                continue
+            data_lines.append([float(x) for x in row if x.strip() != ''])
+    return np.array(data_lines)
+
+def analyze_thermal_data(data):
+    """Compute variability and fog-related uniformity metrics."""
+    timestamp = time.time_ns()
+    mean_val = np.mean(data)
+    std_val = np.std(data)
+    min_val = np.min(data)
+    max_val = np.max(data)
+
+    metrics = {
+        'mean_temperature': mean_val,
+        'std_dev': std_val,
+        'min_temperature': min_val,
+        'max_temperature': max_val,
+    }
+    with Plugin() as plugin:
+        plugin.publish("thermal.mean.c", mean_val, timestamp=timestamp)
+        plugin.publish("thermal.stddev.c", std_val, timestamp=timestamp)
+        plugin.publish("thermal.max.c", max_val, timestamp=timestamp)
+        plugin.publish("thermal.min.c", min_val, timestamp=timestamp)
+
+    return metrics
 
 def main():
-    with Plugin() as plugin:
-        # open camera and take snapshot
-        with Camera() as camera:
-            snapshot = camera.snapshot()
+    parser = argparse.ArgumentParser(description="Thermal camera data capture and analysis")
+    parser.add_argument("--user", type=str, help="Camera username")
+    parser.add_argument("--password", type=str, help="Camera password")
+    parser.add_argument("--ip", type=str, default="camera-pt-rgbt-mobotix", help="Camera IP or hostname")
+    args = parser.parse_args()
 
-        # compute mean color
-        mean_color = compute_mean_color(snapshot.data)
+    delete_all_files("/data/")
+    get_camera_frames(ip=args.ip, user=args.user, password=args.password)
+    process_thermal_data()
 
-        # publish mean color
-        plugin.publish("color.mean.r", mean_color[0], timestamp=snapshot.timestamp)
-        plugin.publish("color.mean.g", mean_color[1], timestamp=snapshot.timestamp)
-        plugin.publish("color.mean.b", mean_color[2], timestamp=snapshot.timestamp)
+def process_thermal_data():
+    """Processes the thermal CSV files and publishes metrics."""
+    pattern = "/data/*_336x252_14bit.thermal.celsius.csv"
+    files = sorted(glob.glob(pattern))
+    if not files:
+        logging.warning("No thermal CSV files found.")
+        return
 
-        # save and upload image
-        snapshot.save("snapshot.jpg")
-        plugin.upload_file("snapshot.jpg", timestamp=snapshot.timestamp)
-
+    for filepath in files:
+        data = load_thermal_csv(filepath)
+        metrics = analyze_thermal_data(data)
+        print(f"Data shape: {data.shape}")
+        for k, v in metrics.items():
+            print(f"{k:30s}: {v:.6f}")
 
 if __name__ == "__main__":
     main()
