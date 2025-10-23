@@ -96,17 +96,6 @@ def analyze_thermal_data(data):
 
     return metrics
 
-def main():
-    parser = argparse.ArgumentParser(description="Thermal camera data capture and analysis")
-    parser.add_argument("--user", type=str, help="Camera username")
-    parser.add_argument("--password", type=str, help="Camera password")
-    parser.add_argument("--ip", type=str, default="camera-pt-rgbt-mobotix", help="Camera IP or hostname")
-    args = parser.parse_args()
-
-    delete_all_files("/data/")
-    get_camera_frames(ip=args.ip, user=args.user, password=args.password)
-    process_thermal_data()
-
 def process_thermal_data():
     """Processes the thermal CSV files and publishes metrics."""
     pattern = "/data/*_336x252_14bit.thermal.celsius.csv"
@@ -121,6 +110,23 @@ def process_thermal_data():
         print(f"Data shape: {data.shape}")
         for k, v in metrics.items():
             print(f"{k:30s}: {v:.6f}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Thermal camera data capture and analysis")
+    parser.add_argument("--ip", type=str, default="camera-pt-rgbt-mobotix", help="Camera IP or hostname")
+    args = parser.parse_args()
+
+    # Read credentials from environment variables
+    user = os.getenv("mobotpassword")
+    password = os.getenv("mobotuser")
+
+    if not user or not password:
+        logging.error("Missing environment variables: CAMERA_USER and CAMERA_PASSWORD must be set.")
+        sys.exit(1)
+
+    delete_all_files("/data/")
+    get_camera_frames(ip=args.ip, user=user, password=password)
+    process_thermal_data()
 
 if __name__ == "__main__":
     main()
