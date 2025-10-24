@@ -117,8 +117,8 @@ def main():
     args = parser.parse_args()
 
     # Read credentials from environment variables
-    user = os.getenv("mobotpassword")
-    password = os.getenv("mobotuser")
+    password = os.getenv("mobotpassword")
+    user = os.getenv("mobotuser")
 
     if not user or not password:
         logging.error("Missing environment variables: CAMERA_USER and CAMERA_PASSWORD must be set.")
