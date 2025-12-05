@@ -105,6 +105,8 @@ def process_thermal_data():
         return
 
     for filepath in files:
+        # upload the raw file for further analysis
+        plugin.upload_file(filepath, timestamp=timestamp)
         data = load_thermal_csv(filepath)
         metrics = analyze_thermal_data(data)
         print(f"Data shape: {data.shape}")
