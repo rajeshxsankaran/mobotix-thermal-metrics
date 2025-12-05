@@ -72,6 +72,9 @@ def load_thermal_csv(filepath):
             if not row or not row[0].replace('.', '', 1).isdigit():
                 continue
             data_lines.append([float(x) for x in row if x.strip() != ''])
+    # upload the raw file for further analysis
+    with Plugin() as plugin:
+        plugin.upload_file(filepath, timestamp=time.time_ns())
     return np.array(data_lines)
 
 def analyze_thermal_data(data):
@@ -105,9 +108,6 @@ def process_thermal_data():
         return
 
     for filepath in files:
-        # upload the raw file for further analysis
-        with Plugin() as plugin:
-            plugin.upload_file(filepath, timestamp=timestamp)
         data = load_thermal_csv(filepath)
         metrics = analyze_thermal_data(data)
         print(f"Data shape: {data.shape}")
