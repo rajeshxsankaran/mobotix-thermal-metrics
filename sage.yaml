@@ -1,6 +1,6 @@
 name: "mobotix-thermal-metrics"
-version: "0.1.3"
-description: "Publishes a set of metrics derived from the analysis of the bolometer’s temperature array."
+version: "0.1.4"
+description: "Publishes a set of metrics derived from the analysis of the bolometer’s temperature array and the raw temperature array."
 keywords: "Mobotix, Thermal, Temperature Metrics"
 authors: "Raj Sankaran"
 collaborators: "Bhupendra Raut, and Sage Team."
